@@ -1,455 +1,360 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="he">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>משחק למבורגיני תלת מימד</title>
+  <title>משחק פרארי תלת-מימד</title>
   <style>
+    * { box-sizing: border-box; }
     body {
       margin: 0;
       overflow: hidden;
-      font-family: sans-serif;
-      direction: rtl;
-      background: #111;
+      font-family: Arial, sans-serif;
+      background: #0c1019;
       color: #fff;
     }
-
     #overlay {
       position: absolute;
-      top: 10px;
-      right: 10px;
-      left: 10px;
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      pointer-events: none;
+      left: 16px;
+      top: 16px;
       z-index: 10;
+      width: 280px;
+      background: rgba(4, 11, 21, 0.92);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 14px;
+      padding: 14px 16px;
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+      line-height: 1.5;
     }
-
-    .panel {
-      background: rgba(0, 0, 0, 0.55);
-      border: 1px solid #2f2f2f;
-      border-radius: 10px;
-      padding: 12px 16px;
-      min-width: 140px;
-      box-shadow: 0 0 20px rgba(0,0,0,0.6);
+    #overlay strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 1.05rem;
+      color: #ffd24d;
     }
-
+    #overlay span { display: block; margin: 4px 0; }
     #message {
       position: absolute;
-      inset: 0;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      text-align: center;
-      pointer-events: none;
-      z-index: 8;
-      font-size: 26px;
-      font-weight: bold;
-      padding: 20px;
-      color: #f7f7f7;
-      text-shadow: 0 0 14px rgba(0,0,0,0.7);
-    }
-
-    #instructions {
-      text-align: center;
-      position: absolute;
-      bottom: 18px;
       left: 50%;
-      transform: translateX(-50%);
-      color: #ddd;
-      pointer-events: none;
+      top: 50%;
+      transform: translate(-50%, -50%);
       z-index: 10;
+      padding: 24px 28px;
+      border-radius: 16px;
+      background: rgba(0, 0, 0, 0.82);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      font-size: 22px;
+      text-align: center;
+      display: none;
+      max-width: 380px;
     }
-
-    button {
+    #message button {
+      margin-top: 14px;
+      padding: 10px 16px;
       border: none;
-      border-radius: 8px;
-      background: #ff3b3b;
+      border-radius: 10px;
+      background: #ff4444;
       color: #fff;
-      padding: 10px 18px;
-      font-size: 16px;
       cursor: pointer;
-      pointer-events: auto;
+      font-size: 1rem;
     }
-
-    button:hover {
-      background: #ff1f1f;
+    canvas { display: block; }
+    .error-screen {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: #090b10;
+      color: #fff;
+      text-align: center;
+      padding: 20px;
     }
   </style>
 </head>
 <body>
   <div id="overlay">
-    <div class="panel" id="scorePanel">נקודות: <span id="score">0</span></div>
-    <div class="panel" id="speedPanel">מהירות: <span id="speed">0</span> קמ"ש</div>
-    <div class="panel" id="statusPanel">סטטוס: <span id="status">רכיבה</span></div>
+    <strong>משחק פרארי תלת-מימד</strong>
+    <span id="timer">זמן: 15.00</span>
+    <span id="status">מטרה: הגעה לקו הסיום בתוך 15 שניות</span>
+    <hr style="border:none;border-top:1px solid rgba(255,255,255,0.12);margin:10px 0;">
+    <span>W / חץ למעלה: תאוצה</span>
+    <span>S / חץ למטה: בלימה לאחור</span>
+    <span>A / חץ שמאל: לפנות שמאלה</span>
+    <span>D / חץ ימין: לפנות ימינה</span>
+    <span>R: איפוס לרכב</span>
   </div>
-  <div id="message">לחץ "הפעל" להתחלה</div>
-  <div id="instructions">שימוש: ← / → או A / D לנתיב, ↑ / W לזרז, ↓ / S להאט</div>
-  <button onclick="restartGame()" style="position:absolute;top:10px;left:10px;z-index:10;">הפעל</button>
+  <div id="message"><div id="messageText"></div><button id="restartButton">נסה שוב</button></div>
 
-  <script src="https://unpkg.com/three@0.158.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
   <script>
-    let scene, camera, renderer, clock;
-    let playerCar, road, laneLines = [];
-    let buses = [];
-    let score = 0;
-    let speed = 0;
-    let lane = 0;
-    let isGameOver = true;
-    let controls = { accelerate: false, decelerate: false };
-    let message = document.getElementById('message');
-    let scoreEl = document.getElementById('score');
-    let speedEl = document.getElementById('speed');
-    let statusEl = document.getElementById('status');
-    const lanePositions = [-2.6, 0, 2.6];
-    const spawnInterval = 1.4;
-    let spawnTimer = 0;
-    let lastTime = 0;
-
-    function init() {
-      scene = new THREE.Scene();
-      scene.fog = new THREE.FogExp2(0x0f1725, 0.02);
-
-      camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 240);
-      camera.position.set(0, 6, 24);
-      camera.lookAt(0, 1.2, 6);
-
-      renderer = new THREE.WebGLRenderer({ antialias: true });
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.setPixelRatio(window.devicePixelRatio);
-      renderer.setClearColor(0x091a2d);
-      document.body.appendChild(renderer.domElement);
-
-      const hemiLight = new THREE.HemisphereLight(0x8fbfff, 0x050520, 0.8);
-      scene.add(hemiLight);
-
-      const ambient = new THREE.AmbientLight(0xffffff, 0.8);
-      scene.add(ambient);
-
-      const dirLight = new THREE.DirectionalLight(0xffffff, 1.1);
-      dirLight.position.set(-4, 10, 16);
-      dirLight.castShadow = false;
-      scene.add(dirLight);
-
-      const fillLight = new THREE.DirectionalLight(0x93d7ff, 0.35);
-      fillLight.position.set(5, 4, -5);
-      scene.add(fillLight);
-
-      createRoad();
-      createPlayerCar();
-      createEnvironment();
-
-      clock = new THREE.Clock();
-      window.addEventListener('resize', onResize);
-      window.addEventListener('keydown', onKeyDown);
-      window.addEventListener('keyup', onKeyUp);
+    if (!window.THREE) {
+      document.body.innerHTML = '<div class="error-screen"><div><h1>שגיאה בטעינת THREE.js</h1><p>בדוק חיבור אינטרנט או נטע את הקובץ שוב.</p></div></div>';
+      throw new Error('Three.js failed to load');
     }
 
-    function createRoad() {
-      const roadGeometry = new THREE.PlaneGeometry(16, 220);
-      const roadMaterial = new THREE.MeshStandardMaterial({ color: 0x1d2330, metalness: 0.2, roughness: 0.7 });
-      road = new THREE.Mesh(roadGeometry, roadMaterial);
-      road.rotation.x = -Math.PI / 2;
-      road.position.z = -90;
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x07101f, 0.008);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+    camera.position.set(0, 14, 26);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    const ambientLight = new THREE.HemisphereLight(0x99c6ff, 0x101020, 0.8);
+    scene.add(ambientLight);
+
+    const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+    sun.position.set(12, 24, 12);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.camera.top = 40;
+    sun.shadow.camera.bottom = -40;
+    sun.shadow.camera.left = -40;
+    sun.shadow.camera.right = 40;
+    scene.add(sun);
+
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(260, 260),
+      new THREE.MeshStandardMaterial({ color: 0x07101f, roughness: 1, metalness: 0 })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    const track = new THREE.Group();
+    scene.add(track);
+
+    const roadMaterial = new THREE.MeshStandardMaterial({ color: 0x1d2f4d, roughness: 0.6, metalness: 0.1 });
+    const stripeMaterial = new THREE.MeshStandardMaterial({ color: 0xe0e0e0, emissive: 0xffffff, emissiveIntensity: 0.1 });
+
+    function addRoad(width, length, x, z, rotation = 0) {
+      const road = new THREE.Mesh(new THREE.BoxGeometry(width, 0.5, length), roadMaterial);
+      road.position.set(x, 0.25, z);
+      road.rotation.y = rotation;
       road.receiveShadow = true;
-      scene.add(road);
+      track.add(road);
+      return road;
+    }
 
-      const borderMaterial = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.9 });
-      const leftBorder = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 220), borderMaterial);
-      leftBorder.rotation.x = -Math.PI / 2;
-      leftBorder.position.set(-8.4, 0.01, -90);
-      scene.add(leftBorder);
-      const rightBorder = leftBorder.clone();
-      rightBorder.position.set(8.4, 0.01, -90);
-      scene.add(rightBorder);
+    function addStripe(width, length, x, z, rotation = 0) {
+      const stripe = new THREE.Mesh(new THREE.BoxGeometry(width, 0.51, length), stripeMaterial);
+      stripe.position.set(x, 0.26, z);
+      stripe.rotation.y = rotation;
+      stripe.receiveShadow = false;
+      track.add(stripe);
+      return stripe;
+    }
 
-      const lineGeometry = new THREE.PlaneGeometry(0.18, 12);
-      const lineMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
-      for (let z = -4; z > -200; z -= 12) {
-        const line = new THREE.Mesh(lineGeometry, lineMaterial);
-        line.rotation.x = -Math.PI / 2;
-        line.position.set(0, 0.02, z);
-        scene.add(line);
-        laneLines.push(line);
+    addRoad(12, 50, 0, 0);
+    addStripe(0.5, 50, 0, 0);
+    addRoad(12, 80, 0, -50);
+    addStripe(0.5, 80, 0, -50);
+    addRoad(12, 40, -15, -95, Math.PI / 2);
+    addStripe(0.5, 40, -15, -95, Math.PI / 2);
+    addRoad(12, 60, -15, -115);
+    addStripe(0.5, 60, -15, -115);
+    addRoad(12, 40, 15, -175, Math.PI / 2);
+    addStripe(0.5, 40, 15, -175, Math.PI / 2);
+    addRoad(12, 70, 15, -195);
+    addStripe(0.5, 70, 15, -195);
+    addRoad(12, 40, 0, -265, Math.PI / 2);
+    addStripe(0.5, 40, 0, -265, Math.PI / 2);
+    addRoad(12, 90, 0, -285);
+    addStripe(0.5, 90, 0, -285);
+    addRoad(12, 42, 15, -370, Math.PI / 2);
+    addStripe(0.5, 42, 15, -370, Math.PI / 2);
+    addRoad(12, 120, 15, -410);
+    addStripe(0.5, 120, 15, -410);
+
+    const finishLine = new THREE.Group();
+    const finishBase = new THREE.Mesh(new THREE.BoxGeometry(12, 0.5, 4), new THREE.MeshStandardMaterial({ color: 0xffcc33, emissive: 0xffcc33, emissiveIntensity: 0.4 }));
+    finishBase.position.set(15, 0.25, -480);
+    finishBase.receiveShadow = true;
+    finishLine.add(finishBase);
+
+    for (let i = -1; i <= 1; i += 2) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.5, 8, 0.5), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4, metalness: 0.5 }));
+      post.position.set(12 * i, 4.2, -484);
+      post.castShadow = true;
+      finishLine.add(post);
+    }
+    scene.add(finishLine);
+
+    const finishRing = new THREE.Mesh(
+      new THREE.TorusGeometry(6.5, 0.6, 16, 64),
+      new THREE.MeshStandardMaterial({ color: 0xff4444, emissive: 0xff4444, emissiveIntensity: 0.8 })
+    );
+    finishRing.position.set(15, 5.5, -484);
+    finishRing.rotation.x = Math.PI / 2;
+    scene.add(finishRing);
+
+    const makeObstacle = (x, z) => {
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(1.2, 2.4, 12), new THREE.MeshStandardMaterial({ color: 0xff5511, roughness: 0.5, metalness: 0.1 }));
+      cone.position.set(x, 1.2, z);
+      cone.castShadow = true;
+      scene.add(cone);
+    };
+    [[-3, -35], [3, -35], [-8, -110], [8, -230], [-3, -340], [3, -380], [-8, -450], [8, -470]].forEach(([x, z]) => makeObstacle(x, z));
+
+    const car = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(4.2, 1.1, 6), new THREE.MeshStandardMaterial({ color: 0xd90404, roughness: 0.3, metalness: 0.25 }));
+    body.position.y = 1.1;
+    body.castShadow = true;
+    car.add(body);
+
+    const cockpit = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.8, 2.8), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.4, metalness: 0.2 }));
+    cockpit.position.set(0, 1.7, -0.3);
+    cockpit.castShadow = true;
+    car.add(cockpit);
+
+    const hood = new THREE.Mesh(new THREE.BoxGeometry(3.8, 0.3, 2.4), new THREE.MeshStandardMaterial({ color: 0xb30000, roughness: 0.35, metalness: 0.2 }));
+    hood.position.set(0, 1.45, 1.1);
+    hood.castShadow = true;
+    car.add(hood);
+
+    const spoiler = new THREE.Mesh(new THREE.BoxGeometry(3.8, 0.18, 0.7), new THREE.MeshStandardMaterial({ color: 0x6f0000, roughness: 0.45, metalness: 0.2 }));
+    spoiler.position.set(0, 1.45, 2.45);
+    spoiler.castShadow = true;
+    car.add(spoiler);
+
+    const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.7, metalness: 0.4 });
+    const wheelGeo = new THREE.CylinderGeometry(0.65, 0.65, 0.45, 16);
+    for (let x of [-1.5, 1.5]) {
+      for (let z of [2.2, -2.2]) {
+        const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+        wheel.rotation.z = Math.PI / 2;
+        wheel.position.set(x, 0.6, z);
+        wheel.castShadow = true;
+        car.add(wheel);
       }
     }
 
-    function createPlayerCar() {
-      playerCar = new THREE.Group();
+    car.position.set(0, 0, 10);
+    car.rotation.y = Math.PI;
+    car.traverse((child) => { if (child.isMesh) child.castShadow = true; });
+    scene.add(car);
 
-      const bodyMat = new THREE.MeshStandardMaterial({ color: 0xff6a00, metalness: 0.9, roughness: 0.12 });
-      const body = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.8, 6.8), bodyMat);
-      body.position.set(0, 0.8, 0);
-      playerCar.add(body);
+    const headlights = new THREE.PointLight(0xfff8d0, 0.9, 18, 2);
+    headlights.position.set(-1.2, 1, -3.2);
+    car.add(headlights);
+    const headlights2 = new THREE.PointLight(0xfff8d0, 0.9, 18, 2);
+    headlights2.position.set(1.2, 1, -3.2);
+    car.add(headlights2);
 
-      const hood = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.35, 2.2), new THREE.MeshStandardMaterial({ color: 0xff7f11, metalness: 0.9, roughness: 0.15 }));
-      hood.position.set(0, 0.95, 2.1);
-      playerCar.add(hood);
+    let speed = 0;
+    let steering = 0;
+    const keys = {};
+    const maxSpeed = 2.1;
+    const acceleration = 0.075;
+    const brakePower = 0.09;
+    const timeLimit = 15.0;
+    let timeLeft = timeLimit;
+    let finished = false;
+    let failed = false;
 
-      const roof = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.45, 3.0), new THREE.MeshStandardMaterial({ color: 0x0f0f14, metalness: 0.4, roughness: 0.18 }));
-      roof.position.set(0, 1.1, -0.5);
-      playerCar.add(roof);
+    const timerDisplay = document.getElementById('timer');
+    const statusDisplay = document.getElementById('status');
+    const message = document.getElementById('message');
+    const messageText = document.getElementById('messageText');
+    const restartButton = document.getElementById('restartButton');
 
-      const spoiler = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.1, 0.6), new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.7, roughness: 0.25 }));
-      spoiler.position.set(0, 1.0, -3.4);
-      playerCar.add(spoiler);
+    window.addEventListener('keydown', (event) => {
+      keys[event.key.toLowerCase()] = true;
+      if (event.key.toLowerCase() === 'r') resetGame();
+    });
+    window.addEventListener('keyup', (event) => {
+      keys[event.key.toLowerCase()] = false;
+    });
 
-      const leftHeadlight = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.18, 0.1), new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.9 }));
-      leftHeadlight.position.set(-0.9, 0.75, 3.4);
-      playerCar.add(leftHeadlight);
-      const rightHeadlight = leftHeadlight.clone();
-      rightHeadlight.position.set(0.9, 0.75, 3.4);
-      playerCar.add(rightHeadlight);
-
-      const frontAir = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.25, 0.35), new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.7, roughness: 0.35 }));
-      frontAir.position.set(0, 0.6, 3.0);
-      playerCar.add(frontAir);
-
-      const rear = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.35, 1.4), new THREE.MeshStandardMaterial({ color: 0x0d0d10, metalness: 0.7, roughness: 0.35 }));
-      rear.position.set(0, 0.55, -3.4);
-      playerCar.add(rear);
-
-      const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.6 });
-      const wheelGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.45, 20);
-      for (let x of [-1.4, 1.4]) {
-        for (let z of [2.4, -2.2]) {
-          const wheel = new THREE.Mesh(wheelGeo, wheelMat);
-          wheel.rotation.z = Math.PI / 2;
-          wheel.position.set(x, 0.35, z);
-          playerCar.add(wheel);
-        }
-      }
-
-      const nose = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.3, 1.4), new THREE.MeshStandardMaterial({ color: 0xffd200, metalness: 0.9, roughness: 0.12 }));
-      nose.position.set(0, 0.65, 3.45);
-      playerCar.add(nose);
-
-      const leftAir = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.2, 0.4), new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.7, roughness: 0.3 }));
-      leftAir.position.set(-1.1, 0.6, 2.7);
-      playerCar.add(leftAir);
-      const rightAir = leftAir.clone();
-      rightAir.position.set(1.1, 0.6, 2.7);
-      playerCar.add(rightAir);
-
-      const sideSkirtLeft = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.15, 0.6), new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.7, roughness: 0.3 }));
-      sideSkirtLeft.position.set(0, 0.4, 0.2);
-      playerCar.add(sideSkirtLeft);
-
-      playerCar.position.set(0, 0, 6);
-      scene.add(playerCar);
-    }
-
-    function createBus() {
-      const bus = new THREE.Group();
-      const bodyMat = new THREE.MeshStandardMaterial({ color: 0x1e90ff, metalness: 0.2, roughness: 0.65 });
-      const body = new THREE.Mesh(new THREE.BoxGeometry(4.2, 2.2, 8), bodyMat);
-      body.position.set(0, 1.1, 0);
-      bus.add(body);
-
-      const windowMat = new THREE.MeshStandardMaterial({ color: 0x88ccee, metalness: 0.1, roughness: 0.6, opacity: 0.78, transparent: true });
-      const windows = new THREE.Mesh(new THREE.BoxGeometry(3.8, 1.1, 1.4), windowMat);
-      windows.position.set(0, 1.45, 1.1);
-      bus.add(windows);
-
-      const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.6 });
-      const wheelGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.5, 20);
-      for (let x of [-1.6, 1.6]) {
-        for (let z of [2.8, -2.4]) {
-          const wheel = new THREE.Mesh(wheelGeo, wheelMat);
-          wheel.rotation.z = Math.PI / 2;
-          wheel.position.set(x, 0.4, z);
-          bus.add(wheel);
-        }
-      }
-
-      const startSide = Math.random() > 0.5 ? -1 : 1;
-      bus.position.set(startSide * 14, 0, -80 - Math.random() * 40);
-      const targetX = lanePositions[Math.floor(Math.random() * lanePositions.length)];
-      bus.userData = {
-        direction: startSide * -1,
-        speed: 0.8 + Math.random() * 0.8,
-        targetX: targetX,
-        arrived: false
-      };
-      scene.add(bus);
-      buses.push(bus);
-    }
-
-    function createEnvironment() {
-      const groundMat = new THREE.MeshStandardMaterial({ color: 0x253048, roughness: 0.96 });
-      const ground = new THREE.Mesh(new THREE.PlaneGeometry(220, 220), groundMat);
-      ground.rotation.x = -Math.PI / 2;
-      ground.position.y = -0.01;
-      ground.position.z = -90;
-      scene.add(ground);
-
-      const leftWall = new THREE.Mesh(new THREE.BoxGeometry(4, 5, 220), new THREE.MeshStandardMaterial({ color: 0x0f1623 }));
-      leftWall.position.set(-11, 2.4, -90);
-      scene.add(leftWall);
-      const rightWall = leftWall.clone();
-      rightWall.position.set(11, 2.4, -90);
-      scene.add(rightWall);
-
-      for (let i = 0; i < 12; i++) {
-        const lightPole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 5), new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.6 }));
-        lightPole.position.set(-6, 2.5, -30 - i * 20);
-        scene.add(lightPole);
-        const lightTop = new THREE.Mesh(new THREE.SphereGeometry(0.25, 12, 8), new THREE.MeshStandardMaterial({ color: 0xfff1b2, emissive: 0xfff1b2, emissiveIntensity: 0.75 }));
-        lightTop.position.set(-6, 4.3, -30 - i * 20);
-        scene.add(lightTop);
-        const poleLight = new THREE.PointLight(0xfff1b2, 0.45, 20);
-        poleLight.position.set(-6, 4.3, -30 - i * 20);
-        scene.add(poleLight);
-
-        const lightPole2 = lightPole.clone();
-        lightPole2.position.set(6, 2.5, -30 - i * 20);
-        scene.add(lightPole2);
-        const lightTop2 = lightTop.clone();
-        lightTop2.position.set(6, 4.3, -30 - i * 20);
-        scene.add(lightTop2);
-        const poleLight2 = new THREE.PointLight(0xfff1b2, 0.45, 20);
-        poleLight2.position.set(6, 4.3, -30 - i * 20);
-        scene.add(poleLight2);
-      }
-    }
-
-    function onResize() {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    }
-
-    function onKeyDown(event) {
-      if (isGameOver && event.key === 'Enter') {
-        restartGame();
-      }
-      if (!isGameOver) {
-        if (event.key === 'ArrowLeft' || event.key === 'a' || event.key === 'A') {
-          lane = Math.max(0, lane - 1);
-        }
-        if (event.key === 'ArrowRight' || event.key === 'd' || event.key === 'D') {
-          lane = Math.min(2, lane + 1);
-        }
-        if (event.key === 'ArrowUp' || event.key === 'w' || event.key === 'W') {
-          controls.accelerate = true;
-        }
-        if (event.key === 'ArrowDown' || event.key === 's' || event.key === 'S') {
-          controls.decelerate = true;
-        }
-      }
-    }
-
-    function onKeyUp(event) {
-      if (event.key === 'ArrowUp' || event.key === 'w' || event.key === 'W') {
-        controls.accelerate = false;
-      }
-      if (event.key === 'ArrowDown' || event.key === 's' || event.key === 'S') {
-        controls.decelerate = false;
-      }
-    }
-
-    function restartGame() {
-      if (!scene) init();
-      isGameOver = false;
-      score = 0;
+    function resetGame() {
+      car.position.set(0, 0, 10);
+      car.rotation.y = Math.PI;
       speed = 0;
-      lane = 1;
-      spawnTimer = 0;
-      lastTime = 0;
-      buses.forEach(bus => scene.remove(bus));
-      buses = [];
-      playerCar.position.set(0, 0, 6);
-      playerCar.rotation.y = 0;
-      controls.accelerate = false;
-      controls.decelerate = false;
+      steering = 0;
+      timeLeft = timeLimit;
+      finished = false;
+      failed = false;
       message.style.display = 'none';
-      statusEl.textContent = 'לחץ ↑ / W לנסוע';
-      scoreEl.textContent = score;
-      speedEl.textContent = speed;
-      animate();
+      statusDisplay.textContent = 'מטרה: הגעה לקו הסיום בתוך 15 שניות';
     }
 
-    function updateRoad(delta) {
-      laneLines.forEach(line => {
-        line.position.z += delta * 45;
-        if (line.position.z > 20) {
-          line.position.z = -180;
-        }
-      });
+    restartButton.addEventListener('click', resetGame);
+
+    function updateCar() {
+      const forward = keys['arrowup'] || keys['w'];
+      const backward = keys['arrowdown'] || keys['s'];
+      const left = keys['arrowleft'] || keys['a'];
+      const right = keys['arrowright'] || keys['d'];
+
+      if (forward) speed += acceleration;
+      else if (backward) speed -= brakePower;
+      else speed *= 0.96;
+
+      speed = THREE.MathUtils.clamp(speed, -0.8, maxSpeed);
+
+      if (left) steering = THREE.MathUtils.lerp(steering, 0.65, 0.09);
+      else if (right) steering = THREE.MathUtils.lerp(steering, -0.65, 0.09);
+      else steering = THREE.MathUtils.lerp(steering, 0, 0.08);
+
+      car.rotation.y += steering * speed * 0.16;
+
+      const forwardVec = new THREE.Vector3(0, 0, -1).applyQuaternion(car.quaternion);
+      car.position.addScaledVector(forwardVec, speed);
+
+      car.position.x = THREE.MathUtils.clamp(car.position.x, -26, 26);
+      car.position.z = THREE.MathUtils.clamp(car.position.z, -490, 20);
     }
 
-    function updateBuses(delta) {
-      if (speed <= 0) {
-        return;
-      }
-      spawnTimer += delta;
-      if (spawnTimer > spawnInterval) {
-        spawnTimer = 0;
-        createBus();
-      }
-
-      buses = buses.filter(bus => {
-        if (!bus.userData.arrived) {
-          const moveX = bus.userData.targetX - bus.position.x;
-          bus.position.x += Math.sign(moveX) * Math.min(Math.abs(moveX), delta * 6);
-          if (Math.abs(moveX) < 0.2) {
-            bus.userData.arrived = true;
-          }
-        }
-        if (speed > 0) {
-          bus.position.z += 3.2 * delta * Math.max(1, speed / 70);
-        }
-
-        if (Math.abs(bus.position.x) > 25 || bus.position.z > 20) {
-          scene.remove(bus);
-          score += 10;
-          scoreEl.textContent = score;
-          return false;
-        }
-
-        const dx = bus.position.x - playerCar.position.x;
-        const dz = bus.position.z - playerCar.position.z;
-        if (Math.abs(dx) < 3.5 && Math.abs(dz) < 3.7) {
-          endGame();
-          return true;
-        }
-
-        return true;
-      });
+    function updateCamera() {
+      const targetPos = car.position.clone().add(new THREE.Vector3(0, 8.5, 20).applyQuaternion(car.quaternion));
+      camera.position.lerp(targetPos, 0.08);
+      camera.lookAt(car.position.x, car.position.y + 1.7, car.position.z);
     }
 
-    function endGame() {
-      isGameOver = true;
-      message.style.display = 'flex';
-      message.textContent = 'נגמר! נקודות: ' + score + '  - לחץ הפעל כדי להתחיל מחדש';
-      statusEl.textContent = 'נגמר';
+    function showResult(text) {
+      messageText.innerHTML = text;
+      message.style.display = 'block';
     }
 
     function animate() {
-      if (isGameOver) return;
-      const delta = clock.getDelta();
-      lastTime += delta;
-      if (controls.accelerate) {
-        speed = Math.min(220, speed + delta * 120);
-      } else if (controls.decelerate) {
-        speed = Math.max(0, speed - delta * 160);
-      } else {
-        speed = Math.max(0, speed - delta * 40);
-      }
-      speedEl.textContent = Math.round(speed);
-      playerCar.position.x = THREE.MathUtils.lerp(playerCar.position.x, lanePositions[lane], delta * 7);
-      playerCar.rotation.y = (playerCar.position.x - lanePositions[lane]) * 0.2;
-      if (speed > 0) {
-        updateRoad(delta);
-        updateBuses(delta);
-      }
-      camera.position.set(playerCar.position.x, 6.2, playerCar.position.z + 20);
-      camera.lookAt(new THREE.Vector3(playerCar.position.x, 1.2, playerCar.position.z + 6));
-      renderer.render(scene, camera);
       requestAnimationFrame(animate);
-      
+      if (!finished && !failed) {
+        updateCar();
+        const delta = Math.min(0.033, 1 / 60);
+        timeLeft -= delta;
+
+        if (timeLeft <= 0) {
+          timeLeft = 0;
+          failed = true;
+          statusDisplay.textContent = 'נכשלת: הזמן נגמר';
+          showResult('הזמן נגמר! לחץ על נתחיל שוב כדי לנסות שוב.');
+        }
+
+        if (car.position.distanceTo(finishRing.position) < 7 && car.position.z < -478) {
+          finished = true;
+          statusDisplay.textContent = 'ניצחת! סיימת בזמן';
+          showResult('כל הכבוד! הגעת לקו הסיום בזמן.');
+        }
+      }
+
+      timerDisplay.textContent = 'זמן: ' + timeLeft.toFixed(2);
+      renderer.render(scene, camera);
+      updateCamera();
     }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    resetGame();
+    animate();
   </script>
 </body>
 </html>
